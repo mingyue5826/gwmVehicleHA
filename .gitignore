@@ -1,0 +1,19 @@
+# 逆向与调试工作区：含抓包原始数据（ssoTk / 手机号等真实凭证）、
+# APK 解包、venv、frida 产物。整个目录不进仓库。
+work/
+
+# 项目内部状态
+.workbuddy/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

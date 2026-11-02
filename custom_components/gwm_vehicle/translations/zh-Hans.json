@@ -1,0 +1,101 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "添加长城汽车",
+        "description": "填写抓包得到的 4 个值（长城汽车 App 2.1.3）。\n\n获取方法：用抓包工具（如 Reqable / HttpCanary）抓 App 登录后的请求，找到 `GW.M.APP_LOGIN` 请求，从 URL 参数 `p` 中取 `ssoid`、`phone`、`ssoTk`；`vin` 从车辆列表接口或 App 关于页面获取。\n\n注意：tokenId 为单会话，Home Assistant 登录后会顶掉手机 App 的车况会话，App 内可能提示重新登录。",
+        "data": {
+          "sso_id": "SSO ID",
+          "phone": "手机号",
+          "sso_token": "ssoTk",
+          "vin": "VIN（车架号）",
+          "vehicle_name": "车辆名称",
+          "model": "车型（可选）",
+          "license_plate": "车牌号（可选）"
+        },
+        "data_description": {
+          "sso_id": "GW.M.APP_LOGIN 请求中的 ssoid，形如 U770000000000000000",
+          "phone": "登录手机号，11 位",
+          "sso_token": "GW.M.APP_LOGIN 请求中的 ssoTk，32 位十六进制串",
+          "vin": "17 位车架号，可从车辆列表接口的 vin 字段获取",
+          "vehicle_name": "在 Home Assistant 中显示的名称",
+          "model": "接口不返回车型，按需手填，如「红标全新哈弗H6 冠军版」",
+          "license_plate": "接口不返回车牌，按需手填，如「京A12345」"
+        }
+      },
+      "reauth_confirm": {
+        "title": "凭证已失效",
+        "description": "车辆 {vin}（{phone}）的 ssoTk 已过期或失效。\n\n请重新抓包获取新的 ssoTk 后填入，其余配置保持不变。",
+        "data": {
+          "sso_token": "新的 ssoTk"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "ssoTk 无效或已过期，请重新抓包获取",
+      "cannot_connect": "无法连接长城服务器，请检查网络后重试",
+      "invalid_vin": "VIN 无效，或该账号下没有这台车",
+      "unknown": "未知错误，请查看日志"
+    },
+    "abort": {
+      "already_configured": "这台车已经添加过了",
+      "reauth_successful": "重新认证成功"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "长城汽车选项",
+        "description": "车辆数据由车机上报，轮询间隔过短不会让数据更新更快，只会增加服务器压力。建议 5–10 分钟。急用时点设备页「诊断」里的「刷新数据」按钮。\n\n车型与车牌只影响设备信息展示，留空即可。",
+        "data": {
+          "scan_interval": "轮询间隔（秒）",
+          "vehicle_name": "车辆名称",
+          "model": "车型",
+          "license_plate": "车牌号"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "remain_fuel": { "name": "剩余油量" },
+      "total_distance": { "name": "总里程" },
+      "tire_pressure_fl": { "name": "胎压-左前" },
+      "tire_pressure_fr": { "name": "胎压-右前" },
+      "tire_pressure_rl": { "name": "胎压-左后" },
+      "tire_pressure_rr": { "name": "胎压-右后" },
+      "tire_temp_fl": { "name": "轮胎温度-左前" },
+      "tire_temp_fr": { "name": "轮胎温度-右前" },
+      "tire_temp_rl": { "name": "轮胎温度-左后" },
+      "tire_temp_rr": { "name": "轮胎温度-右后" },
+      "position": { "name": "车辆位置" },
+      "last_update": { "name": "数据更新时间" },
+      "ac_target_temperature": { "name": "空调-设定温度" },
+      "ac_volume_level": { "name": "空调-风量" },
+      "ac_runtime": { "name": "空调-运行时长" },
+      "engine_runtime": { "name": "发动机-远程启动时长" }
+    },
+    "binary_sensor": {
+      "door_lock": { "name": "车锁" },
+      "engine": { "name": "发动机" },
+      "door_fl": { "name": "车门-左前" },
+      "door_fr": { "name": "车门-右前" },
+      "door_rl": { "name": "车门-左后" },
+      "door_rr": { "name": "车门-右后" },
+      "trunk": { "name": "后备箱" },
+      "hood": { "name": "引擎盖" },
+      "window_fl": { "name": "车窗-左前" },
+      "window_fr": { "name": "车窗-右前" },
+      "window_rl": { "name": "车窗-左后" },
+      "window_rr": { "name": "车窗-右后" },
+      "fuel_low_alarm": { "name": "低油量报警" },
+      "tire_abnormal": { "name": "胎压异常" },
+      "ac_cooling": { "name": "空调-制冷" },
+      "ac_heating": { "name": "空调-制热" },
+      "ac_appointment": { "name": "空调-预约" }
+    },
+    "button": {
+      "refresh": { "name": "刷新数据" }
+    }
+  }
+}

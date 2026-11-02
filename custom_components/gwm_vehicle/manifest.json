@@ -1,0 +1,12 @@
+{
+  "domain": "gwm_vehicle",
+  "name": "长城汽车 GWM",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/your-name/gwm-vehicle-ha",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/your-name/gwm-vehicle-ha/issues",
+  "requirements": [],
+  "version": "0.2.0"
+}
