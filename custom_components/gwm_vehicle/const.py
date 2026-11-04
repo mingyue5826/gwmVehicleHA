@@ -96,6 +96,24 @@ BRAND_LOGO = "brand/logo.png"
 STATIC_URL_PREFIX = "gwm_vehicle"
 
 # ---------------------------------------------------------------------------
+# 前端卡片（custom_components/<domain>/www/ 下，随 HACS 一起下载）
+# ---------------------------------------------------------------------------
+# 卡片 js 文件名
+CARD_JS_FILENAME = "gwm-vehicle-card.js"
+# 通过 HA HTTP 静态路径对外暴露的 URL（frontend.py 注册）
+# 用独立前缀 <domain>-card，避免与 STATIC_URL_PREFIX 的目录路由重叠冲突
+CARD_URL_PATH = f"/{DOMAIN}-card/{CARD_JS_FILENAME}"
+# 仪表盘里 type: custom:gwm-vehicle-card
+CARD_ELEMENT_NAME = "gwm-vehicle-card"
+# 用户此前手工添加过的资源地址：自动识别并迁移/去重，避免卡片被加载两次
+CARD_LEGACY_URL_PREFIXES = (
+    "/local/community/gwm-vehicle-card/",
+    "/local/gwm_vehicle/",
+    "/local/gwm-vehicle-card.js",
+    "/hacsfiles/gwm-vehicle-card/",
+)
+
+# ---------------------------------------------------------------------------
 # 定位
 # ---------------------------------------------------------------------------
 # 车机未定位时上报 (0, 0)，按无效处理

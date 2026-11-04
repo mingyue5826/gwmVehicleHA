@@ -155,11 +155,111 @@ custom_components/gwm_vehicle/
 ├── binary_sensor.py     # 二进制传感器
 ├── device_tracker.py    # 地图定位
 ├── button.py            # 立即刷新
+├── frontend.py          # 前端卡片自动注册（静态路径 + Lovelace 资源表）
+├── www/
+│   └── gwm-vehicle-card.js  # 车辆状态卡片（custom:gwm-vehicle-card）
 ├── const.py             # 常量 + 极性规则
-├── brand/               # 品牌图（icon/logo + 深色版）+ 车辆渲染图（45°/正面）
+├── brand/               # 品牌图（icon/logo + 深色版）+ 车辆渲染图（45°/侧面俯视 h6_top.png）
 ├── manifest.json
 ├── strings.json
 └── translations/
+```
+
+## 车辆状态卡片（前端）
+
+集成自带一张 Lovelace 卡片 `custom:gwm-vehicle-card`（文件在
+`custom_components/gwm_vehicle/www/gwm-vehicle-card.js`，随 HACS 一起安装）。
+
+**装完重启 HA 即可用，无需手动添加资源**——集成启动时会自动：
+
+1. 把卡片 js 注册为 HTTP 静态路径 `/gwm_vehicle-card/gwm-vehicle-card.js`
+2. 写进 Lovelace 资源表（URL 带 `?v=版本号`，升级后浏览器自动丢弃旧缓存）
+3. 若你的 Lovelace 是 YAML 模式（资源表只读），自动退回 `add_extra_js_url`
+4. 从 HACS 之外手工装过旧版卡片的，会自动识别旧地址并去重迁移
+5. 删除集成的最后一个配置条目时，自动从资源表移除卡片
+
+卡片内容（全部素材随集成内置在 `brand/`，无需外链）：
+
+| 元素 | 素材 / 实现 | 说明 |
+|---|---|---|
+| 车图 | `brand/h6_top.png` | 俯视线稿，车头朝上；深色主题自动反色；可换图、调不透明度与最大高度 |
+| 胎压 / 胎温 | **四个轮胎常显胎压+胎温两行标注，各引一条水平引导线指到车轮中心**（版式对齐车机 App） | 端点以车图百分比定位，卡片任意宽度都不会跑偏；异常轮改红框红字闪烁 + 红色虚线 + 红胎叠加 |
+| 车门打开 | **真实开门俯视图裁下的门片**（`door_front_open.png` / `door_rear_open.png`，左侧门自动镜像） | `door_overlay: false` 可退回「门」字角标 |
+| 车窗 / 引擎盖 / 后备箱 | 琥珀「窗/盖/箱」角标 | 位置 `markers` 可调 |
+| 发动机启动 | 红色发动机叠加层 `brand/h6_engine.png` | `engine_image`/`engine_region` 可配 |
+| 空调 | 制冷蓝 / 制热红胶囊徽标（呼吸动画） | 含设定温度 |
+| 未上锁 | 虚线琥珀边框 + 锁形角标（`lock_style` 可选） | 已按集成 `raw_value` 正确判断极性 |
+| 其余 | 告警旗（加油机/车胎图标）、总里程、油量进度条、定位（点击弹地图）、更新时间 + 刷新 | 刷新会提示「车机是否已上报新数据」 |
+
+四个轮胎的胎压与胎温**默认常显**在车图两侧（`224 kPa` / `27°C` 两行），
+每个标注都有一条水平引导线，**线端点落在车轮中心**（坐标取自车图百分比，与卡片宽度无关），
+只有轮胎异常时才变红闪烁。`show_tire_normal: false` 可退回「仅异常时显示」；
+车图下方那行文字摘要默认关闭（`show_tire_summary: true` 可开）。
+
+实体自动识别按 **translation_key → entity_id 正则（`tyre`/`tire` 两种写法都认）→
+中文 friendly_name** 三级匹配；卡片底部会提示未识别实体，浏览器控制台可看完整识别日志。
+
+### 车锁极性说明
+
+集成把原始值 `0=已上锁` 映射成实体 `on`，这与 HA 对 `lock` 类 binary_sensor
+「on = 未上锁」的约定相反。卡片会优先读实体的 `raw_value` 属性来判断，
+因此不会把已上锁的车误报成「未上锁」。
+
+### 使用
+
+编辑仪表盘 → 添加卡片 → 手动，粘贴：
+
+```yaml
+type: custom:gwm-vehicle-card
+```
+
+多辆车时用设备名区分：
+
+```yaml
+type: custom:gwm-vehicle-card
+device: 哈弗H6          # 匹配设备名（包含即可）
+```
+
+### 全部配置项
+
+```yaml
+type: custom:gwm-vehicle-card
+device: ""                # 设备名匹配（推荐多车时用）；留空自动识别
+prefix: ""                # 或按 entity_id 前缀匹配
+title: ""                 # 自定义标题；留空用设备名
+entities: {}              # 显式指定实体，如 {remain_fuel: sensor.xxx}，优先级最高
+image: /gwm_vehicle/brand/h6_top.png  # 车图 URL
+image_opacity: 1          # 车图不透明度 0~1
+car_max_height: 420       # 车图最大高度 px
+markers: {}               # 位置覆盖，如 {tire_fl: {x: 7, y: 14.2, side: left}}（占车图百分比，x 同时是引导线终点）
+engine_image: /gwm_vehicle/brand/h6_engine.png   # 发动机红色叠加图
+engine_region: {x: 33.5, y: 9, w: 34.5, h: 13.5} # 发动机叠加区域（占车图百分比）
+door_overlay: true        # 开门时贴真实门片（false 退回「门」字角标）
+door_layout: {}           # 门片位置覆盖，如 {fr: {left: 92.95, top: 28.99, w: 46.58}}
+tire_overlay: true        # 胎压异常时贴红色轮胎
+tire_layout: {}           # 红胎位置覆盖
+show_tire_normal: true    # 正常轮胎也显示胎压/胎温标注（默认开启；false = 仅异常时显示）
+show_tire_summary: false  # 车图下方一行文字摘要（默认关闭，两侧标注已含全部读数）
+fuel_capacity_l: 58       # 油箱容量（升），用于油量百分比换算升数
+fuel_low_percent: 15      # 无低油报警时的油量告警阈值（%）
+pressure_low: 220         # 胎压下限 kPa（低于判异常，红色）
+pressure_high: 300        # 胎压上限 kPa
+temp_high: 60             # 胎温上限 °C
+lock_style: both          # 未上锁提示：both 虚线边框+角标 / border 仅边框 / badge 仅角标
+blink: true               # 异常项是否闪烁
+ac_animation: true        # 空调徽标呼吸动画
+```
+
+### YAML 模式 Lovelace
+
+资源表不可写时集成会走 `add_extra_js_url` 兜底，一般无需手动配置；若要手动声明：
+
+```yaml
+lovelace:
+  mode: yaml
+  resources:
+    - url: /gwm_vehicle-card/gwm-vehicle-card.js?v=0.3.0
+      type: module
 ```
 
 ## 排错

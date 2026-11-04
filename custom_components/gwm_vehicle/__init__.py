@@ -20,6 +20,7 @@ from .const import (
     STATIC_URL_PREFIX,
 )
 from .coordinator import GwmCoordinator
+from .frontend import async_remove_card, async_setup_card
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -63,6 +64,18 @@ async def _async_register_static(hass: HomeAssistant) -> None:
         hass.data[_STATIC_KEY] = True
 
 
+async def async_setup(hass: HomeAssistant, config) -> bool:
+    """集成首次加载时注册前端卡片资源。
+
+    卡片注册失败不应影响集成本体可用。
+    """
+    try:
+        await async_setup_card(hass)
+    except Exception as error:  # noqa: BLE001
+        _LOGGER.warning("注册前端卡片资源失败（不影响集成本体）: %s", error)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """建立配置项。"""
     api = GwmApi(
@@ -98,3 +111,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """选项变更后重载。"""
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """最后一个配置条目删除时清理卡片资源（多账号删一个不影响其他）。
+
+    HA 调用本函数时该 entry 已从 hass.config_entries 摘掉，
+    async_entries(DOMAIN) 为空即代表最后一个。
+    """
+    if hass.config_entries.async_entries(DOMAIN):
+        return
+    try:
+        await async_remove_card(hass)
+    except Exception as error:  # noqa: BLE001
+        _LOGGER.warning("移除前端卡片资源失败: %s", error)

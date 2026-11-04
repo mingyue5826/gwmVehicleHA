@@ -9,6 +9,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import BRAND_IMAGE_45, DOMAIN, STATIC_URL_PREFIX
 from .coordinator import GwmCoordinator
 from .entity import GwmBaseEntity, resolve_path
+from .geo import gcj02_to_wgs84
 
 
 def _coord(value) -> float | None:
@@ -42,17 +43,31 @@ class GwmDeviceTracker(GwmBaseEntity, TrackerEntity):
         return f"/{STATIC_URL_PREFIX}/{BRAND_IMAGE_45}"
 
     @property
+    def _wgs84(self) -> tuple[float | None, float | None]:
+        """车机给的是 GCJ-02，转成 HA 通用的 WGS-84。
+
+        不转的话车辆会在地图上偏 500 米出头，「距家距离」也跟着虚高
+        （实测 493 m vs 实际 113 m）。
+        """
+        lat = _coord(resolve_path(self.coordinator.data, "carStatus.lat"))
+        lon = _coord(resolve_path(self.coordinator.data, "carStatus.lon"))
+        if lat is None or lon is None:
+            return None, None
+        # 车机未定位时上报 (0, 0)，那是「没有坐标」而不是几内亚湾
+        if abs(lat) < 0.0001 and abs(lon) < 0.0001:
+            return None, None
+        return gcj02_to_wgs84(lat, lon)
+
+    @property
     def latitude(self) -> float | None:
-        return _coord(resolve_path(self.coordinator.data, "carStatus.lat"))
+        return self._wgs84[0]
 
     @property
     def longitude(self) -> float | None:
-        return _coord(resolve_path(self.coordinator.data, "carStatus.lon"))
+        return self._wgs84[1]
 
     @property
     def available(self) -> bool:
-        if self.latitude is None or self.longitude is None:
-            return False
-        if abs(self.latitude) < 0.0001 and abs(self.longitude) < 0.0001:
+        if self._wgs84[0] is None or self._wgs84[1] is None:
             return False
         return super().available

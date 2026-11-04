@@ -26,6 +26,7 @@ from homeassistant.util import dt as dt_util
 from .const import DOMAIN, LOCATION_ZERO_EPS
 from .coordinator import GwmCoordinator
 from .entity import GwmBaseEntity, resolve_path
+from .geo import gcj02_to_wgs84
 
 PRESSURE_KPA = UnitOfPressure.KPA
 
@@ -223,9 +224,13 @@ class GwmSensor(GwmBaseEntity, SensorEntity):
 class GwmPositionSensor(GwmBaseEntity, SensorEntity):
     """车辆当前定位。
 
+    车机下发 GCJ-02，这里统一转成 WGS-84 再交给 HA —— 地图、``zone.home``
+    和 ``device_tracker`` 的「在家/离家」判断都按 WGS-84 解释，
+    不转会稳定偏 500 米出头。
+
     ``device_tracker`` 里的「在家/离家」是 Home Assistant 核心算的：
-    拿下面的经纬度和 zone.home 的圆心做球面距离，小于 area 半径（默认 100 m）
-    就是在家，否则离家。集成这边只负责把车机上报的坐标交出去。
+    拿下面的经纬度和 zone.home 的圆心做球面距离，小于 zone 半径就是在家。
+    集成这边只负责把正确的坐标交出去。
     """
 
     _attr_translation_key = "position"
@@ -244,7 +249,7 @@ class GwmPositionSensor(GwmBaseEntity, SensorEntity):
         # 车机未定位时会上报 (0, 0)，那是「没有坐标」而不是「几内亚湾」
         if abs(lat) < LOCATION_ZERO_EPS and abs(lon) < LOCATION_ZERO_EPS:
             return None, None
-        return lat, lon
+        return gcj02_to_wgs84(lat, lon)
 
     @property
     def native_value(self) -> str | None:
