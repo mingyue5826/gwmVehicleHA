@@ -427,9 +427,15 @@ class GwmVehicleCard extends HTMLElement {
     // 定位与刷新
     resolved.tracker = pool.find((id) => id.startsWith("device_tracker.")) || "";
     const btnCandidates = pool.filter((id) => id.startsWith("button."));
+    // 有两个刷新按钮（唤醒车机 / 仅重新拉取），必须按 translation_key 精确取，
+    // 否则会被名称里的「刷新」误导，点到不唤醒车机那个
     resolved.refresh =
-      btnCandidates.find((id) => /刷新/.test(hass.states[id]?.attributes?.friendly_name || "")) ||
-      btnCandidates.find((id) => short(id) === "refresh" || short(id).endsWith("_refresh")) ||
+      btnCandidates.find((id) => (registry[id] || {}).translation_key === "refresh") ||
+      btnCandidates.find(
+        (id) =>
+          (registry[id] || {}).translation_key !== "refresh_cache" &&
+          /(^|_)refresh$/.test(short(id))
+      ) ||
       btnCandidates[0] || "";
 
     const sig = JSON.stringify(resolved) + "|" + missing.join();

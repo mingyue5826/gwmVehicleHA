@@ -162,7 +162,10 @@
     },
     "button": {
       "refresh": {
-        "name": "Refresh data (ask the car to report)"
+        "name": "Refresh data (wake the car)"
+      },
+      "refresh_cache": {
+        "name": "Refresh data (re-read cache only)"
       }
     }
   }

@@ -526,10 +526,10 @@ brandType: GWM
 | `sensor.py` | 16 个数值实体（含车辆位置） |
 | `binary_sensor.py` | 17 个二进制实体 |
 | `device_tracker.py` | GPS 位置（在地图上移动，在家/离家由 HA 按 zone.home 判定） |
-| `button.py` | 1 个「刷新数据」按钮，诊断分类：下发 `REFRESH_VEHICLE_STATE` 让车机重新上报，再后台轮询 `uploadTime` 判断完成 |
+| `button.py` | 2 个刷新按钮，均诊断分类：①「唤醒车机」下发 `REFRESH_VEHICLE_STATE` 再后台轮询 `uploadTime`；②「仅重新拉取」直接 `GET_VEHICLE_STATE` 读缓存 |
 | `const.py` | 端点、请求头最小集、**门窗极性规则** |
 
-共 35 个实体。无第三方依赖（仅用 HA 自带的 aiohttp）。
+共 36 个实体。无第三方依赖（仅用 HA 自带的 aiohttp）。
 品牌图在 `brand/`，**全部官方素材**：
 - `icon.png`(512×512)：App Store 官方应用图标（长城汽车，红底 + 白色徽标 + GWM），
   原图 1024×1024，经 `itunes.apple.com/search` 的 `artworkUrl512` 取得后降采样。红底在两套主题下都成立，
