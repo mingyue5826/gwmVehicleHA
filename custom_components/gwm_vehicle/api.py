@@ -31,6 +31,7 @@ from .const import (
     FN_GET_AIR_STS,
     FN_GET_ENGINE_STS,
     FN_GET_VEHICLE_STATE,
+    FN_REFRESH_VEHICLE_STATE,
     PAYLOAD_HEADER,
     REQUEST_TIMEOUT,
     TSP_EAD_URL,
@@ -158,6 +159,20 @@ class GwmApi:
         """只取车况原始 vehicleSts（配置流程校验用）。"""
         body = await self._async_call_with_retry(FN_GET_VEHICLE_STATE)
         return body.get("vehicleSts") or {}
+
+    async def async_request_vehicle_refresh(self) -> str:
+        """下发「刷新数据」，让车机重新上报整车状态，返回 transactionId。
+
+        与 ``async_get_vehicle_state`` 的本质区别：后者只是读服务端缓存，
+        永远不会产生新数据；这个接口才是真正把指令下发到 T-BOX。
+
+        body 只返回 transactionId，指令是异步执行的 —— App 拿到 seqNo 后会去
+        ``gw-app-gateway`` 的 ``remote-ctrl/result`` 轮询执行结果，那条路要
+        bt-auth-sign 签名，走不通。这里改用「轮询 uploadTime 是否推进」判断，
+        效果等价且完全免签名。
+        """
+        body = await self._async_call_with_retry(FN_REFRESH_VEHICLE_STATE)
+        return str(body.get("transactionId") or "")
 
     async def async_fetch_all(self) -> dict[str, Any]:
         """一次轮询取全部只读数据，合并成一个扁平结构供实体消费。

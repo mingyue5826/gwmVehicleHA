@@ -180,13 +180,14 @@ G-TOKEN: <JWT, RS256>   Sign: <sha256>   beanId / ssoId / DeviceId / TimeStamp /
 | 6 | 车辆安全信息 | GET `gw-app-gateway /app-api/api/v3.0/vehicle/security/info?version=1` | — | `securityTime:2592000`（免密有效期 30 天）、`isSecurityPasswordExist` |
 | 7 | 服务项 | GET `gw-app-gateway /app-api/api/v3.0/vehicle/service/item/{vin}?userRole=1` | — | TOF 能力码（远程控制/安防/坐席等） |
 | 8 | 车辆图片 | GET `gw-app-gateway /app-api/api/v3.0/vehicle/picture/{vin}` | — | 外观色、选装件 |
+| 9 | `GW.M.REFRESH_VEHICLE_STATE` | GET `ti.gwm.com.cn:8443/tsp/ead` | `body:{vin}` | 只返回 `transactionId`；**让车机重新上报**，数据靠 #1 再取 |
 
 ### 5.1 车况字段样例（`GW.M.GET_VEHICLE_STATE`）
 
 ```json
 {"vehicleSts":{
   "battSts":{"chgSts":0,"socSts":-1,"finishTime":-1},          // 充电状态（燃油车为空值）
-  "carStatus":{"remainFuel":"13","vehTotDistance":"45176",
+  "carStatus":{"remainFuel":"13","vehTotDistance":"12345",
     "drvTirePress":"228","passTirePress":"226","rlTirePress":"222","rrTirePress":"224",
     "drvTireTemp":"30","passTireTemp":"31","rlTireTemp":"28","rrTireTemp":"29",
     "drvDoorSts":0,"passDoorSts":0,"rlDoorSts":0,"rrDoorSts":0,"trunkSts":0,"hoodSts":"0",
@@ -504,7 +505,7 @@ brandType: GWM
 |---|---|---|---|
 | `accessToken` | JWT | **7 天**（2026-11-01 21:59 → 11-08 21:59） | loginSSOAccount 返回 |
 | `refreshToken` | JWT | **30 天**（→ 2026-12-01 21:59） | loginSSOAccount 返回 |
-| `ssoTk` / `ptToken` | 32 hex GUID | ≥ **7 小时 21 分**（21:59 → 次日 05:20 实测仍可换 tk），上限未知 | 抓包 / 登录返回 |
+| `ssoTk` / `ptToken` | 32 hex GUID | ≥ **6 天**（2026-11-01 21:59 签发 → 11-07 16:01 实测仍可换 tk），上限未知 | 抓包 / 登录返回 |
 | `tokenId`（tk） | 32 hex | 未知，单会话互踢；失效返回 `c=-101` | APP_LOGIN 返回 |
 
 4 值方案中只有 `ssoTk` 会过期；`ssoId` / `phone` / `vin` 永久不变。
@@ -525,7 +526,7 @@ brandType: GWM
 | `sensor.py` | 16 个数值实体（含车辆位置） |
 | `binary_sensor.py` | 17 个二进制实体 |
 | `device_tracker.py` | GPS 位置（在地图上移动，在家/离家由 HA 按 zone.home 判定） |
-| `button.py` | 1 个「刷新数据」按钮，诊断分类，点一下立即拉一次车况 |
+| `button.py` | 1 个「刷新数据」按钮，诊断分类：下发 `REFRESH_VEHICLE_STATE` 让车机重新上报，再后台轮询 `uploadTime` 判断完成 |
 | `const.py` | 端点、请求头最小集、**门窗极性规则** |
 
 共 35 个实体。无第三方依赖（仅用 HA 自带的 aiohttp）。
@@ -549,7 +550,7 @@ brandType: GWM
 ```
 [PASS] 时间戳格式为 17 位
 [PASS] 拿到 vehicleSts / carStatus（54 字段）
-       油量=13%  里程=12345km  位置=(39.908692, 116.397477)
+       油量=13L  里程=12345km  位置=(39.908692, 116.397477)
 [PASS] 伪造 tk → 自动重换并成功取数，tk 被替换
 [PASS] 清空 tk → 自动登录
 [PASS] 25 个实体字段路径全部存在于真实响应
@@ -573,10 +574,45 @@ brandType: GWM
 | `GW.M.GET_VEHICLE_STATE` | ✅ | `vehicleSts`（54 字段 carStatus + battSts/chargeSettings/lastUpdate/apptAirSts） |
 | `GW.M.GET_AIR_STS` | ✅ **新发现** | 远程空调设置 |
 | `GW.M.GET_ENGINE_STS` | ✅ | `{"runTime":"20"}` |
+| `GW.M.REFRESH_VEHICLE_STATE` | ✅ **最有用** | `{"transactionId":"otsp…"}`，指令异步下发 |
 | `GW.M.GET_MESSAGE_LIST` | ✅ | 站内消息 |
 | `GW.M.APP_LOGIN` | ✅ | tokenId |
 | `GW.M.SET_AIR_STS` / `AIR_CONDITIONER_START` / `AIR_START` / `SET_AIR` | ❌ 500 fallback | 控制指令不在 TSP |
 | `GW.M.GET_SEAT_STS` / `GET_WINDOW_STS` / `GET_TIRE_STS` / `GET_TRIP_INFO` / `GET_MAINTENANCE_INFO` | ❌ 500 fallback | 字段已含在 carStatus |
+
+### 16.1.1 `GW.M.REFRESH_VEHICLE_STATE` —— App 的「刷新数据」
+
+**之前把「刷新」和「取车况」当成同一个接口，是错的。** 两者分工：
+
+| | `GET_VEHICLE_STATE` | `REFRESH_VEHICLE_STATE` |
+|---|---|---|
+| 作用 | 读服务端**缓存** | 下发指令，要求 **T-BOX 重新上报** |
+| 是否产生新数据 | ❌ 永远只是缓存 | ✅ 车机会上报一遍 |
+| 返回 | `vehicleSts`（54 字段） | `{"transactionId":"otsp…"}` |
+| 耗时 | < 1 秒 | 异步，车机醒着 10 秒、休眠 1–3 分钟 |
+
+**免签名可用**（实测 2026-11-07）：只带 `token` 请求头即可，`sign`/`ckey`/`time`/`cid` 全部省略也返回 `c=0`。
+与 `GET_VEHICLE_STATE` 同一个入口 `ti.gwm.com.cn:8443/tsp/ead`，同一个 TSP 网关。
+
+```python
+r = tsp("GW.M.REFRESH_VEHICLE_STATE", {"vin": VIN})
+# {"header": {"c": 0, "m": "Success", ...},
+#  "body":   {"transactionId": "otsp7c54cd8242d14352ad54554541596097"}}
+```
+
+**App 的下半段走不通**：拿到 `transactionId` 后，App 会去
+`gw-app-gateway.gwmapp-h.com/app-api/api/v3.0/vehicle/remote-ctrl/result?seqNo=<seq>&vin=<vin>&msgType=remote`
+轮询指令执行结果 —— 那是 `bt-auth-sign` 强校验的网关，逆不出来。
+
+**但不需要它**：指令执行成功后服务端缓存必然刷新，`carStatus.uploadTime` 会推进。
+所以用「下发 REFRESH → 轮询 GET_VEHICLE_STATE 比较 uploadTime」即可判断完成，等价且全程免签名。
+
+两个实测细节（2026-11-07 16:21 / 16:26）：
+
+1. 刷新瞬间服务端缓存会被**清空**，此时 `GET_VEHICLE_STATE` 返回的 `carStatus` 是空壳
+   （`uploadTime`/`remainFuel`/`lat` 全为 `None`）。集成里做了保护：这种情况沿用上一轮数据，
+   否则所有实体会瞬间变「未知」。
+2. `vehicleSts.lastUpdate` 与 `carStatus.uploadTime` 实测**同值同跳**，都是车机上报时刻（13 位毫秒时间戳）。
 
 ### 16.2 `GW.M.GET_AIR_STS` 完整字段
 
@@ -631,8 +667,8 @@ brandType: GWM
 
 | 用户关心的项 | 可得 | 来源 |
 |---|---|---|
-| 里程 | ✅ 45176 km | `carStatus.vehTotDistance` |
-| 剩余油量 | ✅ 13% | `carStatus.remainFuel` |
+| 里程 | ✅ 12345 km | `carStatus.vehTotDistance` |
+| 剩余油量 | ✅ 13 L（**升，非百分比**） | `carStatus.remainFuel` |
 | 4 个胎压 | ✅ 228/226/222/224 kPa | `drv/pass/rl/rr TirePress` |
 | 4 个胎温 | ✅ 30/31/28/29 ℃ | `drv/pass/rl/rr TireTemp` |
 | 车门（4 门） | ✅ 全关 | `*DoorSts` |

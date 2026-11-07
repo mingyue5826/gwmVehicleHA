@@ -9,7 +9,7 @@
  * 实体自动发现：translation_key → entity_id 后缀 → 中文 friendly_name 三级匹配。
  * 零依赖：原生 Web Component，颜色走 HA 主题 CSS 变量（自动适配深浅色）。
  */
-const CARD_VERSION = "0.4.5";
+const CARD_VERSION = "0.6.1";
 const DOMAIN = "gwm_vehicle";
 const DEFAULT_IMAGE = `/${DOMAIN}/brand/h6_top.png`;
 const DEFAULT_ENGINE_IMAGE = `/${DOMAIN}/brand/h6_engine.png`;
@@ -101,6 +101,18 @@ const DEFAULT_MARKERS = {
   ac:       { x: 50, y: 46 },
 };
 
+/* 点击热区（占车图宽高百分比）。车图本身是细长线稿，真实可点区域太窄，
+   所以热区向外扩到车图之外，并用 z-index 压在覆盖层之上。
+   门：以门缝中线为准向两侧各留余量；右侧门用 right 定位（与 DOOR_OVERLAY 一致）。 */
+const DOOR_HIT = {
+  fl: { left: -7, top: 26, w: 22, h: 24 },
+  fr: { right: -7, top: 26, w: 22, h: 24 },
+  rl: { left: -7, top: 48, w: 22, h: 24 },
+  rr: { right: -7, top: 48, w: 22, h: 24 },
+};
+/* 发动机热区：比红色叠加层略大一圈，方便点中 */
+const ENGINE_HIT = { x: 31, y: 8, w: 39, h: 16 };
+
 function fmtInt(n) {
   return n == null || isNaN(n) ? "--" : Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
@@ -144,8 +156,8 @@ class GwmVehicleCard extends HTMLElement {
       engine_region: { ...DEFAULT_ENGINE_REGION, ...(config.engine_region || {}) },
       markers: { ...DEFAULT_MARKERS, ...(config.markers || {}) },
       fuel_capacity_l: Number(config.fuel_capacity_l) || 58,
-      fuel_low_percent: Number(config.fuel_low_percent) || 15,
-      pressure_low: Number(config.pressure_low) || 220,
+      fuel_low_percent: Number(config.fuel_low_percent) || 10,
+      pressure_low: Number(config.pressure_low) || 190,
       pressure_high: Number(config.pressure_high) || 300,
       temp_high: Number(config.temp_high) || 60,
       lock_style: config.lock_style || "both",
@@ -166,18 +178,43 @@ class GwmVehicleCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     this._resolveEntities(hass);
-    // 刷新后在等车机上报：一旦「数据更新时间」变了就算成功
+    // 刷新状态以按钮实体的 refresh_status 为准（后端才知道车机到底回没回）
+    this._syncRefreshState(hass);
+    // 兜底：后端属性拿不到时，靠「数据更新时间」自己判断
     if (this._refreshing) {
       const id = this._entities.last_update;
       const now = id ? hass.states[id]?.state : undefined;
       if (now && this._refreshFrom && now !== this._refreshFrom) {
-        this._refreshing = false;
-        this._refreshResult = "ok";
-        if (this._refreshTimer) { clearTimeout(this._refreshTimer); this._refreshTimer = null; }
-        setTimeout(() => { if (this._refreshResult === "ok") { this._refreshResult = ""; this.render(); } }, 6000);
+        this._finishRefresh("ok");
       }
     }
     this.render();
+  }
+
+  _finishRefresh(result) {
+    this._refreshing = false;
+    this._refreshResult = result;
+    if (this._refreshTimer) { clearTimeout(this._refreshTimer); this._refreshTimer = null; }
+    const ttl = result === "ok" ? 6000 : 9000;
+    setTimeout(() => {
+      if (this._refreshResult === result) { this._refreshResult = ""; this.render(); }
+    }, ttl);
+  }
+
+  // 按钮实体上的 refresh_status: idle / waiting / done / timeout / failed
+  _syncRefreshState(hass) {
+    const id = this._entities.refresh;
+    if (!id) return;
+    const status = hass.states[id]?.attributes?.refresh_status;
+    if (!status) return;
+    if (status === "waiting") {
+      if (!this._refreshing) { this._refreshing = true; this._refreshResult = ""; this.render(); }
+      return;
+    }
+    if (!this._refreshing) return;
+    if (status === "done") this._finishRefresh("ok");
+    else if (status === "timeout") this._finishRefresh("stale");
+    else if (status === "failed") this._finishRefresh("failed");
   }
 
   getCardSize() {
@@ -202,7 +239,53 @@ class GwmVehicleCard extends HTMLElement {
       });
       this._ro.observe(this);
     }
-    this.shadowRoot.addEventListener("click", (e) => this._onClick(e));
+    /* 事件只绑一次：HA 可能多次 connected/disconnected，重复绑定会触发多次弹框 */
+    if (!this._bound) {
+      this._bound = true;
+      this.shadowRoot.addEventListener("click", (e) => this._onClick(e));
+      this.shadowRoot.addEventListener("pointerdown", (e) => this._onPointerDown(e));
+      ["pointerup", "pointercancel", "pointerleave"].forEach((ev) =>
+        this.shadowRoot.addEventListener(ev, () => this._cancelLongPress())
+      );
+      this.shadowRoot.addEventListener("contextmenu", (e) => {
+        if (this._lpTimer || this._lpFired) e.preventDefault();
+      });
+    }
+  }
+
+  /* 长按 500ms 触发第二个实体（胎压块：短按=胎压，长按=胎温） */
+  _onPointerDown(e) {
+    /* 每次按下先清标记：万一上次长按后没有跟上 click，不至于把下一次点击吞掉 */
+    this._lpFired = false;
+    const el = this._actionTarget(e, "data-long-entity");
+    if (!el) {
+      this._cancelLongPress();
+      return;
+    }
+    this._cancelLongPress();
+    this._lpTimer = setTimeout(() => {
+      this._lpTimer = null;
+      this._lpFired = true;
+      const id = el.getAttribute("data-long-entity");
+      if (id) {
+        this._fireMoreInfo(id);
+        if (navigator.vibrate) navigator.vibrate(15);
+      }
+    }, 500);
+  }
+
+  _cancelLongPress() {
+    if (this._lpTimer) {
+      clearTimeout(this._lpTimer);
+      this._lpTimer = null;
+    }
+  }
+
+  /* 从事件路径里找带指定属性的最近元素 */
+  _actionTarget(e, attr) {
+    return e.composedPath().find(
+      (n) => n instanceof Element && n.hasAttribute && n.hasAttribute(attr)
+    );
   }
 
   disconnectedCallback() {
@@ -213,29 +296,42 @@ class GwmVehicleCard extends HTMLElement {
   }
 
   _onClick(e) {
-    const target = e.composedPath().find(
-      (n) => n instanceof Element && n.hasAttribute && n.hasAttribute("data-action")
-    );
+    /* 长按已经弹过第二个实体，紧随其后的 click 要吞掉，否则会再弹一个 */
+    if (this._lpFired) {
+      this._lpFired = false;
+      return;
+    }
+    const target = this._actionTarget(e, "data-action");
     if (!target || !this._hass) return;
     const action = target.getAttribute("data-action");
 
+    /* 通用：弹某个实体的 more-info（胎压块、发动机、车门、里程、油量都用它） */
+    if (action === "entity") {
+      const id = target.getAttribute("data-entity");
+      if (id) this._fireMoreInfo(id);
+      return;
+    }
+
     if (action === "refresh") {
+      // 上一次还在等车机上报，别重复下发（后端也有 60 秒冷却）
+      if (this._refreshing) return;
       const btn = this._entities.refresh;
+      // 按钮在等车机上报期间是 unavailable，此时点它只会报错
+      if (btn && this._hass.states[btn]?.state === "unavailable") {
+        this._refreshing = true;
+        this.render();
+        return;
+      }
       const luId = this._entities.last_update;
       this._refreshFrom = luId ? this._hass.states[luId]?.state : null;
       this._refreshing = true;
       this._refreshResult = "";
       this.render();
       if (this._refreshTimer) clearTimeout(this._refreshTimer);
-      // 40 秒内「数据更新时间」没变化 → 车机没上报，如实提示
+      // 兜底：后端 180 秒后才判超时，这里留点余量
       this._refreshTimer = setTimeout(() => {
-        if (this._refreshing) {
-          this._refreshing = false;
-          this._refreshResult = "stale";
-          this.render();
-          setTimeout(() => { if (this._refreshResult === "stale") { this._refreshResult = ""; this.render(); } }, 8000);
-        }
-      }, 40000);
+        if (this._refreshing) this._finishRefresh("stale");
+      }, 200000);
       if (btn) {
         this._hass.callService("button", "press", { entity_id: btn });
       } else {
@@ -261,8 +357,9 @@ class GwmVehicleCard extends HTMLElement {
     if (action === "tire" && this._entities.tire_abnormal) {
       this._fireMoreInfo(this._entities.tire_abnormal);
     }
-    if (action === "fuel" && this._entities.fuel_low_alarm) {
-      this._fireMoreInfo(this._entities.fuel_low_alarm);
+    if (action === "fuel") {
+      const id = this._entities.remain_fuel || this._entities.fuel_low_alarm;
+      if (id) this._fireMoreInfo(id);
     }
   }
 
@@ -407,14 +504,22 @@ class GwmVehicleCard extends HTMLElement {
       const abnormal =
         (p !== null && (p < cfg.pressure_low || p > cfg.pressure_high)) ||
         (t !== null && t > cfg.temp_high);
-      return { ...d, p, t, abnormal };
+      /* 带上实体 id：点击胎压块弹胎压实体的 more-info，长按弹胎温 */
+      return {
+        ...d, p, t, abnormal,
+        pId: this._entities[d.p] || "",
+        tId: this._entities[d.t] || "",
+      };
     });
     // 全局胎压异常报警但阈值没推断出轮位 → 全部标红提示
     if (on("tire_abnormal") && !tires.some((x) => x.abnormal)) {
       tires.forEach((x) => { x.abnormal = true; x.globalOnly = true; });
     }
 
-    const fuelPct = num("remain_fuel");
+    // remain_fuel 是剩余升数；百分比只为进度条与告警阈值服务，按油箱容量换算
+    const fuelL = num("remain_fuel");
+    const fuelPct = fuelL !== null && cfg.fuel_capacity_l > 0
+      ? (fuelL / cfg.fuel_capacity_l) * 100 : null;
     const fuelLow = on("fuel_low_alarm") || (fuelPct !== null && fuelPct <= cfg.fuel_low_percent);
     const acCool = on("ac_cooling");
     const acHeat = on("ac_heating");
@@ -446,8 +551,7 @@ class GwmVehicleCard extends HTMLElement {
 
     return {
       title, tires,
-      fuelPct, fuelLow,
-      liters: fuelPct !== null ? (fuelPct / 100) * cfg.fuel_capacity_l : null,
+      fuelPct, fuelL, fuelLow,
       mileage: num("total_distance"),
       engineOn: on("engine"),
       acCool, acHeat, acTemp, acVol,
@@ -466,17 +570,22 @@ class GwmVehicleCard extends HTMLElement {
       m.unlocked && (this._config.lock_style === "both" || this._config.lock_style === "badge")
         ? `<div class="lock-badge"><svg width="13" height="13" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5zm0 2a3 3 0 0 0-3 3v3h6V7a3 3 0 0 0-3-3z"/></svg><span>未上锁</span></div>`
         : "";
-    const mileage =
-      m.mileage != null && !isNaN(m.mileage)
-        ? `<span class="mileage">${fmtInt(m.mileage)} km</span>`
-        : "";
+    /* 总里程右对齐到卡片右缘（与左侧车名两端对齐），点击弹里程实体 */
+    const mid = this._entities.total_distance || "";
+    const hasMileage = m.mileage != null && !isNaN(m.mileage);
+    const mileage = hasMileage
+      ? `<div class="mileage${mid ? " clickable" : ""}"${
+          mid ? ` data-action="entity" data-entity="${mid}"` : ""
+        } title="点击查看总里程实体">
+          <span class="mileage-label">总里程</span><b>${fmtInt(m.mileage)}</b><i>km</i>
+        </div>`
+      : "";
     return `<div class="header">
       <div class="title-row">
         <svg class="title-icon" width="20" height="20" viewBox="0 0 24 24"><path fill="currentColor" d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11a2 2 0 0 1 2 2v4h-2a2 2 0 0 1-4 0H9a2 2 0 0 1-4 0H3v-4a2 2 0 0 1 2-2zm2.1 0h9.8l-1-3H8.1l-1 3z"/></svg>
         <span class="title">${m.title}</span>
-        ${mileage}
       </div>
-      ${badge}
+      <div class="header-right">${badge}${mileage}</div>
     </div>`;
   }
 
@@ -492,8 +601,11 @@ class GwmVehicleCard extends HTMLElement {
       );
     }
     if (m.fuelLow) {
+      const fid = this._entities.remain_fuel || this._entities.fuel_low_alarm || "";
       flags.push(
-        `<div class="flag warn ${blinkCls}" data-action="fuel"><svg width="13" height="13" viewBox="0 0 24 24"><path fill="currentColor" d="${ICON_FUEL}"/></svg><span>油量低${m.fuelPct !== null ? ` · ${Math.round(m.fuelPct)}%` : ""}</span></div>`
+        `<div class="flag warn ${blinkCls}${fid ? " clickable" : ""}"${
+          fid ? ` data-action="entity" data-entity="${fid}"` : ""
+        }><svg width="13" height="13" viewBox="0 0 24 24"><path fill="currentColor" d="${ICON_FUEL}"/></svg><span>油量低${m.fuelL !== null ? ` · ${Math.round(m.fuelL)} L` : ""}</span></div>`
       );
     }
     return flags.length ? `<div class="flags">${flags.join("")}</div>` : "";
@@ -532,9 +644,13 @@ class GwmVehicleCard extends HTMLElement {
         const chipStyle = left
           ? `right:calc(${(100 - x).toFixed(2)}% + ${MARK + GAP}px);top:${y}%`
           : `left:calc(${x}% + ${MARK + GAP}px);top:${y}%`;
+        const attr = t.pId ? ` data-action="entity" data-entity="${t.pId}"` : "";
+        const attrLong = t.tId ? ` data-long-entity="${t.tId}"` : "";
         return `<span class="tire-line ${cls}" style="${lineStyle}"></span>
           <i class="tire-dot ${cls}" style="left:${x}%;top:${y}%"></i>
-          <div class="tire-chip ${cls}${t.abnormal ? " " + blinkCls : ""}" style="${chipStyle}">
+          <div class="tire-chip ${cls}${t.abnormal ? " " + blinkCls : ""}${t.pId || t.tId ? " clickable" : ""}"
+            style="${chipStyle}"${attr}${attrLong}
+            title="${t.cn}轮 · 短按看胎压，长按看胎温">
             <b>${pTxt}<i>kPa</i></b><span>${tTxt}°C</span>
           </div>`;
       })
@@ -547,9 +663,11 @@ class GwmVehicleCard extends HTMLElement {
           style="left:${er.x}%;top:${er.y}%;width:${er.w}%;height:${er.h}%">`
       : "";
 
-    const badge = (open, name, pos) =>
+    const badge = (open, name, pos, entId) =>
       open && pos
-        ? `<div class="marker" style="left:${pos.x}%;top:${pos.y}%">${name}</div>`
+        ? `<div class="marker${entId ? " clickable" : ""}" style="left:${pos.x}%;top:${pos.y}%"${
+            entId ? ` data-action="entity" data-entity="${entId}"` : ""
+          }>${name}</div>`
         : "";
 
     // 空调：制冷蓝 / 制热红 徽标（呼吸动画）
@@ -557,18 +675,44 @@ class GwmVehicleCard extends HTMLElement {
     if (m.acCool || m.acHeat) {
       const cls = m.acCool ? "cool" : "heat";
       const label = `${m.acCool ? "制冷" : "制热"}${m.acTemp !== null ? " " + Math.round(m.acTemp) + "°C" : ""}`;
-      acBadge = `<div class="ac-pill ${cls} ${cfg.ac_animation ? "pulse" : ""}" style="left:${mk.ac.x}%;top:${mk.ac.y}%">${label}</div>`;
+      const acId = this._entities.ac_target_temperature || "";
+      acBadge = `<div class="ac-pill ${cls} ${cfg.ac_animation ? "pulse" : ""}${acId ? " clickable" : ""}"
+        style="left:${mk.ac.x}%;top:${mk.ac.y}%"${
+          acId ? ` data-action="entity" data-entity="${acId}"` : ""
+        }>${label}</div>`;
     }
 
     const markers = [
-      badge(m.hood, "盖", mk.hood),
-      badge(m.trunk, "箱", mk.trunk),
-      badge(m.windows.fl, "窗", mk.window_fl),
-      badge(m.windows.fr, "窗", mk.window_fr),
-      badge(m.windows.rl, "窗", mk.window_rl),
-      badge(m.windows.rr, "窗", mk.window_rr),
+      badge(m.hood, "盖", mk.hood, this._entities.hood),
+      badge(m.trunk, "箱", mk.trunk, this._entities.trunk),
+      badge(m.windows.fl, "窗", mk.window_fl, this._entities.window_fl),
+      badge(m.windows.fr, "窗", mk.window_fr, this._entities.window_fr),
+      badge(m.windows.rl, "窗", mk.window_rl, this._entities.window_rl),
+      badge(m.windows.rr, "窗", mk.window_rr, this._entities.window_rr),
       acBadge,
     ].join("");
+
+    /* 点击热区：透明、无内容，只把点击映射到实体（比线稿本身好点中）。
+       放在 markers 之前，同 z-index 下 markers 后绘制、优先接收点击。 */
+    const DOOR_CN = { fl: "左前", fr: "右前", rl: "左后", rr: "右后" };
+    const hot = (style, entId, tip) =>
+      entId
+        ? `<div class="hit" style="${style}" data-action="entity" data-entity="${entId}" title="${tip}"></div>`
+        : "";
+    const doorHits = Object.entries(DOOR_HIT)
+      .map(([k, h]) => {
+        const style =
+          h.right != null
+            ? `right:${h.right}%;top:${h.top}%;width:${h.w}%;height:${h.h}%`
+            : `left:${h.left}%;top:${h.top}%;width:${h.w}%;height:${h.h}%`;
+        return hot(style, this._entities["door_" + k], DOOR_CN[k] + "车门状态");
+      })
+      .join("");
+    const engineHit = hot(
+      `left:${ENGINE_HIT.x}%;top:${ENGINE_HIT.y}%;width:${ENGINE_HIT.w}%;height:${ENGINE_HIT.h}%`,
+      this._entities.engine,
+      "发动机状态"
+    );
 
     /* 开门：贴真实开门俯视图裁出的门片（左门镜像），比角标直观 */
     const doorOverlays = cfg.door_overlay
@@ -605,6 +749,8 @@ class GwmVehicleCard extends HTMLElement {
         ${tireOverlays}
         ${doorOverlays}
         ${engineOverlay}
+        ${engineHit}
+        ${doorHits}
         ${markers}
         ${tireMarks}
       </div>
@@ -677,15 +823,17 @@ class GwmVehicleCard extends HTMLElement {
   _footerHtml(m) {
     const spin = this._refreshing ? "spin" : "";
     const note = this._refreshing
-      ? `<span class="refresh-note busy">刷新中…等待车机上报</span>`
+      ? `<span class="refresh-note busy">正在唤醒车机…</span>`
       : this._refreshResult === "ok"
-        ? `<span class="refresh-note ok">已刷新</span>`
+        ? `<span class="refresh-note ok">车机已上报</span>`
         : this._refreshResult === "stale"
-          ? `<span class="refresh-note warn">已请求刷新 · 车机尚未上报</span>`
-          : "";
+          ? `<span class="refresh-note warn">指令已下发 · 车机未响应</span>`
+          : this._refreshResult === "failed"
+            ? `<span class="refresh-note warn">刷新指令发送失败</span>`
+            : "";
     return `<div class="footer">
       <span class="update-time">数据更新于 ${m.updateTime}${note}</span>
-      <button class="refresh-btn ${spin}" data-action="refresh" title="刷新车况（5–20 秒后生效）">
+      <button class="refresh-btn ${spin}" data-action="refresh" title="让车机重新上报（10 秒 ~ 3 分钟）">
         <svg width="13" height="13" viewBox="0 0 24 24"><path fill="currentColor" d="M12 4V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-8z"/></svg>
         刷新
       </button>
@@ -694,11 +842,14 @@ class GwmVehicleCard extends HTMLElement {
 
   _metricsHtml(m) {
     const pct = m.fuelPct;
-    const pctTxt = pct === null ? "--" : `${Math.round(pct)}%`;
-    const literTxt = m.liters !== null ? `${m.liters.toFixed(1)} L` : "";
+    const pctTxt = m.fuelL === null ? "--" : `${Math.round(m.fuelL)} L`;
+    const literTxt = pct === null ? "" : `约 ${Math.round(pct)}%`;
     const barColor = m.fuelLow ? "var(--error-color,#db4437)" : pct !== null && pct < 25 ? "var(--warning-color,#ffa600)" : "var(--success-color,#43a047)";
     const barW = pct === null ? 0 : Math.max(0, Math.min(100, pct));
-    return `<div class="metric fuel">
+    const fid = this._entities.remain_fuel || this._entities.fuel_low_alarm || "";
+    return `<div class="metric fuel${fid ? " clickable" : ""}"${
+      fid ? ` data-action="entity" data-entity="${fid}"` : ""
+    } title="点击查看剩余油量实体">
       <div class="metric-top"><span class="metric-label"><svg width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="${ICON_FUEL}"/></svg>剩余油量</span><span class="metric-badge" style="color:${barColor}">${pctTxt}</span></div>
       <div class="bar"><div class="bar-fill" style="width:${barW}%;background:${barColor}"></div></div>
       <div class="metric-val">${literTxt || (pct === null ? "无数据" : "")}</div>
@@ -753,11 +904,19 @@ ha-card {
 .blink { animation: gwm-blink 1.1s ease-in-out infinite; }
 @keyframes gwm-blink { 50% { opacity: .3; } }
 
-.header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .title-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .title-icon { color: var(--info-color,#039be5); flex-shrink: 0; }
 .title { font-size: 15px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mileage { font-size: 12px; color: var(--secondary-text-color,#727272); white-space: nowrap; }
+.header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto; }
+/* 总里程：右端对齐，前置 label */
+.mileage { display: flex; align-items: baseline; gap: 4px; white-space: nowrap; border-radius: 6px;
+  padding: 2px 6px; margin-right: -6px; }
+.mileage-label { font-size: 11px; color: var(--secondary-text-color,#727272); }
+.mileage b { font-size: 13px; font-weight: 600; color: var(--primary-text-color,#111); letter-spacing: -.2px; }
+.mileage i { font-style: normal; font-size: 10px; color: var(--secondary-text-color,#727272); }
+.mileage.clickable { cursor: pointer; }
+.mileage.clickable:hover { background: var(--secondary-background-color,#f5f5f5); }
 .lock-badge { display: flex; align-items: center; gap: 5px; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 500; flex-shrink: 0;
   background: color-mix(in srgb, var(--warning-color,#ffa600) 15%, transparent); color: var(--warning-color,#ffa600); }
 
@@ -775,11 +934,16 @@ ha-card {
 
 /* 四轮胎压/胎温：圆点落在轮胎中心，引导线向车外延伸，值块在线外侧。
    三者都是绝对定位，坐标全部取自车图百分比 → 永远对得上轮子。 */
-.tire-chip { position: absolute; z-index: 5; transform: translateY(-50%); pointer-events: none;
+.tire-chip { position: absolute; z-index: 5; transform: translateY(-50%);
   display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2;
   border-radius: 8px; padding: 3px 8px; border: 1px solid var(--divider-color,#e0e0e0);
   background: var(--card-background-color,#fff); color: var(--primary-text-color,#212121);
-  box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+  box-shadow: 0 1px 3px rgba(0,0,0,.07);
+  -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+.tire-chip.clickable { cursor: pointer; }
+.tire-chip.clickable:hover { border-color: var(--primary-color,#039be5);
+  box-shadow: 0 1px 6px rgba(0,0,0,.16); }
+.tire-chip.clickable:active { transform: translateY(-50%) scale(.96); }
 .tire-chip b { font-size: 13px; font-weight: 600; letter-spacing: -.2px; }
 .tire-chip span { font-size: 11px; font-weight: 400; opacity: .78; }
 .tire-chip i { font-style: normal; font-size: 9px; font-weight: 400; margin-left: 2px; opacity: .7; }
@@ -798,6 +962,13 @@ ha-card {
 
 .door-open, .tire-red { position: absolute; z-index: 2; pointer-events: none; }
 .car-wrap.dark-img .door-open, .car-wrap.dark-img .tire-red { filter: invert(1) hue-rotate(180deg) saturate(1.15); }
+
+/* 点击热区：完全透明，悬停给淡底衬提示"这里能点"；移动端无 hover，靠 title 无法提示，
+   所以热区也覆盖在门缝/发动机这些位置本身合理的位置上 */
+.hit { position: absolute; z-index: 2; border-radius: 8px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; }
+.hit:hover { background: color-mix(in srgb, var(--primary-color,#039be5) 9%, transparent); }
+.marker.clickable, .ac-pill.clickable, .flag.clickable { cursor: pointer; }
 
 .refresh-note { margin-left: 6px; font-size: 11px; }
 .refresh-note.busy { color: var(--info-color,#039be5); }
@@ -843,6 +1014,8 @@ ha-card {
 
 .metric { background: var(--secondary-background-color,#f5f5f5); border-radius: 8px; padding: 10px 12px; }
 .metric.fuel { margin-top: 10px; }
+.metric.clickable { cursor: pointer; }
+.metric.clickable:hover { filter: brightness(0.96); }
 .metric-top { display: flex; justify-content: space-between; align-items: baseline; }
 .metric-label { font-size: 12px; color: var(--secondary-text-color,#727272); display: inline-flex; align-items: center; gap: 4px; }
 .metric-badge { font-size: 12px; font-weight: 500; }
@@ -883,9 +1056,9 @@ class GwmVehicleCardEditor extends HTMLElement {
       { name: "title", label: "自定义标题（留空用设备名）", selector: { text: {} } },
       { name: "image", label: "车图 URL（留空用内置俯视图）", selector: { text: {} } },
       { name: "engine_image", label: "发动机叠加层 URL（留空用内置红发动机）", selector: { text: {} } },
-      { name: "image_opacity", label: "车图不透明度 0-1", selector: { number: { min: 0, max: 1, step: 0.05, mode: "box" } } },
-      { name: "car_max_height", label: "车图最大高度 px", selector: { number: { min: 200, max: 800, step: 10, mode: "box" } } },
-      { name: "fuel_capacity_l", label: "油箱容量（升）", selector: { number: { min: 1, max: 200, step: 1, mode: "box" } } },
+      { name: "image_opacity", label: "车图不透明度 0-1（默认 1）", selector: { number: { min: 0, max: 1, step: 0.05, mode: "box" } } },
+      { name: "car_max_height", label: "车图最大高度 px（默认 420）", selector: { number: { min: 200, max: 800, step: 10, mode: "box" } } },
+      { name: "fuel_capacity_l", label: "油箱容量（升，默认 58）", selector: { number: { min: 1, max: 200, step: 1, mode: "box" } } },
       {
         name: "lock_style", label: "未上锁提示样式",
         selector: { select: { options: [
@@ -895,9 +1068,9 @@ class GwmVehicleCardEditor extends HTMLElement {
         ] } },
       },
       { name: "blink", label: "异常项闪烁", selector: { boolean: {} } },
-      { name: "pressure_low", label: "胎压下限 (kPa)", selector: { number: { min: 100, max: 350, step: 1, mode: "box" } } },
-      { name: "pressure_high", label: "胎压上限 (kPa)", selector: { number: { min: 150, max: 450, step: 1, mode: "box" } } },
-      { name: "temp_high", label: "胎温上限 (°C)", selector: { number: { min: 40, max: 120, step: 1, mode: "box" } } },
+      { name: "pressure_low", label: "胎压下限 (kPa，默认 190)", selector: { number: { min: 1, max: 500, step: 1, mode: "box" } } },
+      { name: "pressure_high", label: "胎压上限 (kPa，默认 300)", selector: { number: { min: 1, max: 500, step: 1, mode: "box" } } },
+      { name: "temp_high", label: "胎温上限 (°C，默认 60)", selector: { number: { min: 0, max: 200, step: 1, mode: "box" } } },
     ];
     const form = document.createElement("ha-form");
     form.hass = this._hass;

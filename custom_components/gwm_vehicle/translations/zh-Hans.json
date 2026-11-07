@@ -58,44 +58,112 @@
   },
   "entity": {
     "sensor": {
-      "remain_fuel": { "name": "剩余油量" },
-      "total_distance": { "name": "总里程" },
-      "tire_pressure_fl": { "name": "胎压-左前" },
-      "tire_pressure_fr": { "name": "胎压-右前" },
-      "tire_pressure_rl": { "name": "胎压-左后" },
-      "tire_pressure_rr": { "name": "胎压-右后" },
-      "tire_temp_fl": { "name": "轮胎温度-左前" },
-      "tire_temp_fr": { "name": "轮胎温度-右前" },
-      "tire_temp_rl": { "name": "轮胎温度-左后" },
-      "tire_temp_rr": { "name": "轮胎温度-右后" },
-      "position": { "name": "车辆位置" },
-      "last_update": { "name": "数据更新时间" },
-      "ac_target_temperature": { "name": "空调-设定温度" },
-      "ac_volume_level": { "name": "空调-风量" },
-      "ac_runtime": { "name": "空调-运行时长" },
-      "engine_runtime": { "name": "发动机-远程启动时长" }
+      "remain_fuel": {
+        "name": "剩余油量"
+      },
+      "total_distance": {
+        "name": "总里程"
+      },
+      "tire_pressure_fl": {
+        "name": "胎压-左前"
+      },
+      "tire_pressure_fr": {
+        "name": "胎压-右前"
+      },
+      "tire_pressure_rl": {
+        "name": "胎压-左后"
+      },
+      "tire_pressure_rr": {
+        "name": "胎压-右后"
+      },
+      "tire_temp_fl": {
+        "name": "轮胎温度-左前"
+      },
+      "tire_temp_fr": {
+        "name": "轮胎温度-右前"
+      },
+      "tire_temp_rl": {
+        "name": "轮胎温度-左后"
+      },
+      "tire_temp_rr": {
+        "name": "轮胎温度-右后"
+      },
+      "position": {
+        "name": "车辆位置"
+      },
+      "last_update": {
+        "name": "数据更新时间"
+      },
+      "ac_target_temperature": {
+        "name": "空调-设定温度"
+      },
+      "ac_volume_level": {
+        "name": "空调-风量"
+      },
+      "ac_runtime": {
+        "name": "空调-运行时长"
+      },
+      "engine_runtime": {
+        "name": "发动机-远程启动时长"
+      }
     },
     "binary_sensor": {
-      "door_lock": { "name": "车锁" },
-      "engine": { "name": "发动机" },
-      "door_fl": { "name": "车门-左前" },
-      "door_fr": { "name": "车门-右前" },
-      "door_rl": { "name": "车门-左后" },
-      "door_rr": { "name": "车门-右后" },
-      "trunk": { "name": "后备箱" },
-      "hood": { "name": "引擎盖" },
-      "window_fl": { "name": "车窗-左前" },
-      "window_fr": { "name": "车窗-右前" },
-      "window_rl": { "name": "车窗-左后" },
-      "window_rr": { "name": "车窗-右后" },
-      "fuel_low_alarm": { "name": "低油量报警" },
-      "tire_abnormal": { "name": "胎压异常" },
-      "ac_cooling": { "name": "空调-制冷" },
-      "ac_heating": { "name": "空调-制热" },
-      "ac_appointment": { "name": "空调-预约" }
+      "door_lock": {
+        "name": "车锁"
+      },
+      "engine": {
+        "name": "发动机"
+      },
+      "door_fl": {
+        "name": "车门-左前"
+      },
+      "door_fr": {
+        "name": "车门-右前"
+      },
+      "door_rl": {
+        "name": "车门-左后"
+      },
+      "door_rr": {
+        "name": "车门-右后"
+      },
+      "trunk": {
+        "name": "后备箱"
+      },
+      "hood": {
+        "name": "引擎盖"
+      },
+      "window_fl": {
+        "name": "车窗-左前"
+      },
+      "window_fr": {
+        "name": "车窗-右前"
+      },
+      "window_rl": {
+        "name": "车窗-左后"
+      },
+      "window_rr": {
+        "name": "车窗-右后"
+      },
+      "fuel_low_alarm": {
+        "name": "低油量报警"
+      },
+      "tire_abnormal": {
+        "name": "胎压异常"
+      },
+      "ac_cooling": {
+        "name": "空调-制冷"
+      },
+      "ac_heating": {
+        "name": "空调-制热"
+      },
+      "ac_appointment": {
+        "name": "空调-预约"
+      }
     },
     "button": {
-      "refresh": { "name": "刷新数据" }
+      "refresh": {
+        "name": "刷新数据（让车机重新上报）"
+      }
     }
   }
 }

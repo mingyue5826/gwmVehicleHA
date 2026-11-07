@@ -58,44 +58,112 @@
   },
   "entity": {
     "sensor": {
-      "remain_fuel": { "name": "Fuel level" },
-      "total_distance": { "name": "Odometer" },
-      "tire_pressure_fl": { "name": "Tyre pressure - front left" },
-      "tire_pressure_fr": { "name": "Tyre pressure - front right" },
-      "tire_pressure_rl": { "name": "Tyre pressure - rear left" },
-      "tire_pressure_rr": { "name": "Tyre pressure - rear right" },
-      "tire_temp_fl": { "name": "Tyre temperature - front left" },
-      "tire_temp_fr": { "name": "Tyre temperature - front right" },
-      "tire_temp_rl": { "name": "Tyre temperature - rear left" },
-      "tire_temp_rr": { "name": "Tyre temperature - rear right" },
-      "position": { "name": "Vehicle position" },
-      "last_update": { "name": "Data updated at" },
-      "ac_target_temperature": { "name": "AC - target temperature" },
-      "ac_volume_level": { "name": "AC - fan level" },
-      "ac_runtime": { "name": "AC - runtime" },
-      "engine_runtime": { "name": "Engine - remote start duration" }
+      "remain_fuel": {
+        "name": "Fuel level"
+      },
+      "total_distance": {
+        "name": "Odometer"
+      },
+      "tire_pressure_fl": {
+        "name": "Tyre pressure - front left"
+      },
+      "tire_pressure_fr": {
+        "name": "Tyre pressure - front right"
+      },
+      "tire_pressure_rl": {
+        "name": "Tyre pressure - rear left"
+      },
+      "tire_pressure_rr": {
+        "name": "Tyre pressure - rear right"
+      },
+      "tire_temp_fl": {
+        "name": "Tyre temperature - front left"
+      },
+      "tire_temp_fr": {
+        "name": "Tyre temperature - front right"
+      },
+      "tire_temp_rl": {
+        "name": "Tyre temperature - rear left"
+      },
+      "tire_temp_rr": {
+        "name": "Tyre temperature - rear right"
+      },
+      "position": {
+        "name": "Vehicle position"
+      },
+      "last_update": {
+        "name": "Data updated at"
+      },
+      "ac_target_temperature": {
+        "name": "AC - target temperature"
+      },
+      "ac_volume_level": {
+        "name": "AC - fan level"
+      },
+      "ac_runtime": {
+        "name": "AC - runtime"
+      },
+      "engine_runtime": {
+        "name": "Engine - remote start duration"
+      }
     },
     "binary_sensor": {
-      "door_lock": { "name": "Door lock" },
-      "engine": { "name": "Engine" },
-      "door_fl": { "name": "Door - front left" },
-      "door_fr": { "name": "Door - front right" },
-      "door_rl": { "name": "Door - rear left" },
-      "door_rr": { "name": "Door - rear right" },
-      "trunk": { "name": "Trunk" },
-      "hood": { "name": "Hood" },
-      "window_fl": { "name": "Window - front left" },
-      "window_fr": { "name": "Window - front right" },
-      "window_rl": { "name": "Window - rear left" },
-      "window_rr": { "name": "Window - rear right" },
-      "fuel_low_alarm": { "name": "Low fuel warning" },
-      "tire_abnormal": { "name": "Tyre abnormality" },
-      "ac_cooling": { "name": "AC - cooling" },
-      "ac_heating": { "name": "AC - heating" },
-      "ac_appointment": { "name": "AC - scheduled" }
+      "door_lock": {
+        "name": "Door lock"
+      },
+      "engine": {
+        "name": "Engine"
+      },
+      "door_fl": {
+        "name": "Door - front left"
+      },
+      "door_fr": {
+        "name": "Door - front right"
+      },
+      "door_rl": {
+        "name": "Door - rear left"
+      },
+      "door_rr": {
+        "name": "Door - rear right"
+      },
+      "trunk": {
+        "name": "Trunk"
+      },
+      "hood": {
+        "name": "Hood"
+      },
+      "window_fl": {
+        "name": "Window - front left"
+      },
+      "window_fr": {
+        "name": "Window - front right"
+      },
+      "window_rl": {
+        "name": "Window - rear left"
+      },
+      "window_rr": {
+        "name": "Window - rear right"
+      },
+      "fuel_low_alarm": {
+        "name": "Low fuel warning"
+      },
+      "tire_abnormal": {
+        "name": "Tyre abnormality"
+      },
+      "ac_cooling": {
+        "name": "AC - cooling"
+      },
+      "ac_heating": {
+        "name": "AC - heating"
+      },
+      "ac_appointment": {
+        "name": "AC - scheduled"
+      }
     },
     "button": {
-      "refresh": { "name": "Refresh data" }
+      "refresh": {
+        "name": "Refresh data (ask the car to report)"
+      }
     }
   }
 }

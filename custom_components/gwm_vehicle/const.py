@@ -19,6 +19,10 @@ TSP_EAD_URL = "https://ti.gwm.com.cn:8443/tsp/ead"
 
 FN_APP_LOGIN = "GW.M.APP_LOGIN"
 FN_GET_VEHICLE_STATE = "GW.M.GET_VEHICLE_STATE"
+# 「刷新数据」：让车机重新上报一整车状态。只返回 transactionId，
+# 真正的数据要等车机（T-BOX）上报后由 GET_VEHICLE_STATE 取到。
+# App 里的刷新按钮点下去调的就是它，之前把它和 GET_VEHICLE_STATE 当成一个接口是错的。
+FN_REFRESH_VEHICLE_STATE = "GW.M.REFRESH_VEHICLE_STATE"
 # 远程空调（含预约空调）上一次的设置：设定温度、风量档、制冷/制热、运行时长
 FN_GET_AIR_STS = "GW.M.GET_AIR_STS"
 # 发动机远程启动的运行时长（分钟）
@@ -112,6 +116,16 @@ CARD_LEGACY_URL_PREFIXES = (
     "/local/gwm-vehicle-card.js",
     "/hacsfiles/gwm-vehicle-card/",
 )
+
+# ---------------------------------------------------------------------------
+# 主动刷新（按钮触发车机重新上报）
+# ---------------------------------------------------------------------------
+# 下发频率下限：App 侧刷新按钮同样有冷却，避免反复唤醒 T-BOX 耗电瓶
+REFRESH_MIN_INTERVAL = 60
+# 下发后轮询车况的间隔与总时长。实测车机醒着时 10 秒内就回，
+# 休眠时要 1–3 分钟，3 分钟还没回基本就是没信号/T-BOX 离线了。
+REFRESH_POLL_INTERVAL = 15
+REFRESH_POLL_TIMEOUT = 180
 
 # ---------------------------------------------------------------------------
 # 定位

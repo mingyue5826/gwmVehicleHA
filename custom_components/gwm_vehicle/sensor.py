@@ -13,11 +13,11 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import (
-    PERCENTAGE,
     UnitOfLength,
     UnitOfPressure,
     UnitOfTemperature,
     UnitOfTime,
+    UnitOfVolume,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -68,7 +68,9 @@ SENSORS: tuple[GwmSensorDescription, ...] = (
         key="remain_fuel",
         translation_key="remain_fuel",
         raw_path="carStatus.remainFuel",
-        native_unit_of_measurement=PERCENTAGE,
+        # 接口返回的是实际剩余油量（升），不是百分比。
+        native_unit_of_measurement=UnitOfVolume.LITERS,
+        device_class=SensorDeviceClass.VOLUME_STORAGE,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:gas-station",
     ),
